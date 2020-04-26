@@ -1,4 +1,4 @@
-/*
+﻿/*
     see copyright notice in squirrel.h
 */
 #include "sqpcheader.h"
@@ -12,6 +12,8 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <ctype.h>
+#include <string>
+#include <algorithm>
 
 static bool str2num(const SQChar *s,SQObjectPtr &res,SQInteger base)
 {
@@ -465,6 +467,123 @@ static SQInteger table_getdelegate(HSQUIRRELVM v)
     return SQ_SUCCEEDED(sq_getdelegate(v,-1))?1:SQ_ERROR;
 }
 
+static std::string _array_reverse(SQArray* arr, SQInteger indent = 0, SQInteger separator = 0);
+static std::string _table_reverse(SQTable* tbl, SQInteger indent = 0, SQInteger separator = 0);
+
+static std::string _obj_to_str(const SQObjectPtr& obj, SQInteger indent = 0, SQInteger separator = 0, SQBool escape = true)
+{
+	switch(type(obj))
+	{
+		case OT_INTEGER:
+		{
+			return std::to_string(_integer(obj));
+		}
+		case OT_FLOAT:
+		{
+			return std::to_string(_float(obj));
+		}
+		case OT_BOOL:
+		{
+			return (_integer(obj) ? "true" : "false");
+		}
+		case OT_STRING:
+		{
+			if(!escape)
+				return std::string(_stringval(obj));
+			
+			return "\"" + std::string(_stringval(obj)) + "\"";
+		}
+		case OT_TABLE:
+		{
+			return _table_reverse(_table(obj), indent > 0 ? indent + 1 : 0, separator);
+		}
+		case OT_ARRAY:
+		{
+			return _array_reverse(_array(obj), indent > 0 ? indent + 1 : 0, separator);
+		}
+	}
+	
+	return "null";
+}
+
+static std::string _table_reverse(SQTable* tbl, SQInteger indent, SQInteger separator)
+{
+	SQInteger idx;
+	std::string ret;
+	SQObjectPtr refidx, key, val;
+	
+	std::string indents, separators;
+	if(indent > 0)
+	{
+		indents += "\n";
+		for(int i = 0; i < indent; ++i)
+			indents += "\t";
+	}
+	if(separator > 0)
+	{
+		for(int i = 0; i < separator; ++i)
+			separators += " ";
+	}
+	
+	while((idx = tbl->Next(false, refidx, key, val)) != -1)
+	{
+		std::string k = _obj_to_str(key, indent, separator), v = _obj_to_str(val, indent, separator);
+		
+		if(ret.empty())
+			ret = k + separators + ":" + separators + v;
+		else
+			ret += "," + indents + k + separators + ":" + separators + v;
+		
+		refidx = idx;
+	}
+	
+	return "{" + indents + ret + indents + "}";
+}
+
+static SQInteger table_tostring(HSQUIRRELVM v)
+{
+	SQTable* tbl = _table(stack_get(v, 1));
+	std::string ret = _table_reverse(tbl);
+	v->Push(SQString::Create(_ss(v), ret.c_str(), ret.size()));
+	return 1;
+}
+
+static SQInteger table_keys(HSQUIRRELVM v)
+{
+	SQTable* tbl = _table(stack_get(v, 1));
+	SQArray* ret = SQArray::Create(_ss(v), tbl->CountUsed());
+	
+	SQInteger idx, i = 0;
+	SQObjectPtr refidx, key, val;
+	
+	while((idx = tbl->Next(false, refidx, key, val)) != -1)
+	{
+		ret->Set(i++, key);
+		refidx = idx;
+	}
+	
+	v->Push(ret);
+	return 1;
+}
+
+static SQInteger table_values(HSQUIRRELVM v)
+{
+	SQTable* tbl = _table(stack_get(v, 1));
+	SQArray* ret = SQArray::Create(_ss(v), tbl->CountUsed());
+	
+	SQInteger idx, i = 0;
+	SQObjectPtr refidx, key, val;
+	
+	while((idx = tbl->Next(false, refidx, key, val)) != -1)
+	{
+		ret->Set(i++, val);
+		refidx = idx;
+	}
+	
+	v->Push(ret);
+	return 1;
+}
+
 const SQRegFunction SQSharedState::_table_default_delegate_funcz[]={
     {_SC("len"),default_delegate_len,1, _SC("t")},
     {_SC("rawget"),container_rawget,2, _SC("t")},
@@ -472,10 +591,12 @@ const SQRegFunction SQSharedState::_table_default_delegate_funcz[]={
     {_SC("rawdelete"),table_rawdelete,2, _SC("t")},
     {_SC("rawin"),container_rawexists,2, _SC("t")},
     {_SC("weakref"),obj_delegate_weakref,1, NULL },
-    {_SC("tostring"),default_delegate_tostring,1, _SC(".")},
+    {_SC("tostring"),table_tostring,1, _SC(".")},
     {_SC("clear"),obj_clear,1, _SC(".")},
     {_SC("setdelegate"),table_setdelegate,2, _SC(".t|o")},
     {_SC("getdelegate"),table_getdelegate,1, _SC(".")},
+	{_SC("keys"),table_keys,1, _SC(".")},
+	{_SC("values"),table_values,1, _SC(".")},
     {NULL,(SQFUNCTION)0,0,NULL}
 };
 
@@ -774,6 +895,48 @@ static SQInteger array_slice(HSQUIRRELVM v)
 
 }
 
+static std::string _array_reverse(SQArray* arr, SQInteger indent, SQInteger separator)
+{
+	SQInteger idx;
+	std::string ret;
+	SQObjectPtr refidx, key, val;
+	
+	std::string indents, separators;
+	if(indent > 0)
+	{
+		indents += "\n";
+		for(int i = 0; i < indent; ++i)
+			indents += "\t";
+	}
+	if(separator > 0)
+	{
+		for(int i = 0; i < separator; ++i)
+			separators += " ";
+	}
+	
+	while((idx = arr->Next(refidx, key, val)) != -1)
+	{
+		std::string v = _obj_to_str(val, indent, separator);
+		
+		if(ret.empty())
+			ret = v;
+		else
+			ret += "," + indents + separators + v;
+		
+		refidx = idx;
+	}
+	
+	return "[" + indents + ret + indents + "]";
+}
+
+static SQInteger array_tostring(HSQUIRRELVM v)
+{
+	SQArray* arr = _array(stack_get(v, 1));
+	std::string ret = _array_reverse(arr);
+	v->Push(SQString::Create(_ss(v), ret.c_str(), ret.size()));
+	return 1;
+}
+
 const SQRegFunction SQSharedState::_array_default_delegate_funcz[]={
     {_SC("len"),default_delegate_len,1, _SC("a")},
     {_SC("append"),array_append,2, _SC("a")},
@@ -788,7 +951,7 @@ const SQRegFunction SQSharedState::_array_default_delegate_funcz[]={
     {_SC("sort"),array_sort,-1, _SC("ac")},
     {_SC("slice"),array_slice,-1, _SC("ann")},
     {_SC("weakref"),obj_delegate_weakref,1, NULL },
-    {_SC("tostring"),default_delegate_tostring,1, _SC(".")},
+    {_SC("tostring"),array_tostring,1, _SC(".")},
     {_SC("clear"),obj_clear,1, _SC(".")},
     {_SC("map"),array_map,2, _SC("ac")},
     {_SC("apply"),array_apply,2, _SC("ac")},
@@ -831,6 +994,258 @@ static SQInteger string_find(HSQUIRRELVM v)
     return sq_throwerror(v,_SC("invalid param"));
 }
 
+static SQBool _string_tailmatch(const SQChar* str, const SQChar* sub, SQInteger start, SQInteger end, int direction)
+{
+	int selflen = (int)strlen(str);
+	int slen = (int)strlen(sub);
+	
+	if (end > selflen)
+        end = selflen;
+    else if (end < 0) {
+        end += selflen;
+        if (end < 0)
+        end = 0;
+    }
+    if (start < 0) {
+        start += selflen;
+        if (start < 0)
+        start = 0;
+    }
+	
+	if (direction < 0)
+	{
+		// startswith
+		if (start + slen>selflen)
+			return 0;
+	}
+	else
+	{
+		// endswith
+		if (end - start < slen || start > selflen)
+			return 0;
+		if (end - slen > start)
+			start = end - slen;
+	}
+	if (end - start >= slen)
+		return !memcmp(str + start, sub, slen);
+	return 0;
+}
+
+static SQInteger string_startswith(HSQUIRRELVM v)
+{
+    const SQChar *str, *substr;
+	SQInteger top, start = 0, end = INT_MAX;
+	if((top = sq_gettop(v)) > 1 && SQ_SUCCEEDED(sq_getstring(v, 1, &str)) && SQ_SUCCEEDED(sq_getstring(v, 2, &substr)))
+	{
+		if(top > 2) sq_getinteger(v, 3, &start);
+		if(top > 3) sq_getinteger(v, 4, &end);
+		sq_pushbool(v, _string_tailmatch(str, substr, start, end, -1));
+		return 1;
+	}
+	
+	return sq_throwerror(v,_SC("invalid param"));
+}
+
+static SQInteger string_endswith(HSQUIRRELVM v)
+{
+	const SQChar *str, *substr;
+	SQInteger top, start = 0, end = INT_MAX;
+	if((top = sq_gettop(v)) > 1 && SQ_SUCCEEDED(sq_getstring(v,1,&str)) && SQ_SUCCEEDED(sq_getstring(v,2,&substr)))
+	{
+		if(top > 2) sq_getinteger(v, 3, &start);
+		if(top > 3) sq_getinteger(v, 4, &end);
+		sq_pushbool(v, _string_tailmatch(str, substr, start, end, +1));
+		return 1;
+	}
+	
+	return sq_throwerror(v,_SC("invalid param"));
+}
+
+#define LEFTSTRIP 0
+#define RIGHTSTRIP 1
+#define BOTHSTRIP 2
+
+static std::string _string_strip(const std::string& str, int striptype, const std::string& chars)
+{
+	std::string::size_type strlen = str.size();
+	std::string::size_type charslen = chars.size();
+	std::string::size_type i, j;
+	
+	const char*sep = chars.c_str();
+	i = 0;
+	if (striptype != RIGHTSTRIP)
+	{
+		//memchr函数：从sep指向的内存区域的前charslen个字节查找str[i]
+		while (i < strlen&&memchr(sep, str[i], charslen))
+		{
+			i++;
+		}
+	}
+	j = strlen;
+	if (striptype != LEFTSTRIP)
+	{
+		j--;
+		while (j >= i&&memchr(sep, str[j], charslen))
+		{
+			j--;
+		}
+		j++;
+	}
+	
+	if (0 == i&& j == strlen)
+		return str;
+	
+	return str.substr(i, j - i);
+}
+
+static SQInteger string_strip(HSQUIRRELVM v)
+{
+	SQInteger top;
+	const SQChar *str, *substr = " \r\n\t";
+	if((top = sq_gettop(v)) > 0 && SQ_SUCCEEDED(sq_getstring(v,1,&str)))
+	{
+		if(top > 1) sq_getstring(v,2,&substr);
+		std::string ret = _string_strip(str, BOTHSTRIP, substr);
+		sq_pushstring(v, ret.c_str(), (SQInteger)ret.size());
+		return 1;
+	}
+	
+	return sq_throwerror(v,_SC("invalid param"));
+}
+
+static SQInteger string_lstrip(HSQUIRRELVM v)
+{
+	SQInteger top;
+	const SQChar *str, *substr = " \r\n\t";
+	if((top = sq_gettop(v)) > 0 && SQ_SUCCEEDED(sq_getstring(v,1,&str)))
+	{
+		if(top > 1) sq_getstring(v,2,&substr);
+		std::string ret = _string_strip(str, LEFTSTRIP, substr);
+		sq_pushstring(v, ret.c_str(), (SQInteger)ret.size());
+		return 1;
+	}
+	
+	return sq_throwerror(v,_SC("invalid param"));
+}
+
+static SQInteger string_rstrip(HSQUIRRELVM v)
+{
+	SQInteger top;
+	const SQChar *str, *substr = " \r\n\t";
+	if((top = sq_gettop(v)) > 0 && SQ_SUCCEEDED(sq_getstring(v,1,&str)))
+	{
+		if(top > 1) sq_getstring(v,2,&substr);
+		std::string ret = _string_strip(str, RIGHTSTRIP, substr);
+		sq_pushstring(v, ret.c_str(), (SQInteger)ret.size());
+		return 1;
+	}
+	
+	return sq_throwerror(v,_SC("invalid param"));
+}
+
+static SQInteger string_split(HSQUIRRELVM v)
+{
+    const SQChar *str, *substr;
+	SQTable* ret = SQTable::Create(_ss(v), 0);
+	if(sq_gettop(v) > 1 && SQ_SUCCEEDED(sq_getstring(v, 1, &str)) && SQ_SUCCEEDED(sq_getstring(v, 2, &substr)))
+	{
+		SQChar* clone = new SQChar[strlen(str) + 1];
+		strcpy(clone, str);
+		
+		SQInteger i = 0;
+		SQChar* nxt = strtok(clone, substr);
+		while(nxt)
+		{
+			ret->NewSlot(i++, SQString::Create(_ss(v), nxt, -1));
+			nxt = strtok(NULL, substr);
+		}
+		
+		v->Push(ret);
+		return 1;
+	}
+	
+	return sq_throwerror(v,_SC("invalid param"));
+}
+
+static SQInteger string_rfind(HSQUIRRELVM v)
+{
+    SQInteger top,start_idx=0;
+    const SQChar *str,*substr,*ret;
+    if(((top=sq_gettop(v))>1) && SQ_SUCCEEDED(sq_getstring(v,1,&str)) && SQ_SUCCEEDED(sq_getstring(v,2,&substr))){
+        if(top>2)sq_getinteger(v,3,&start_idx);
+		
+		auto lens = strlen(str), lend = strlen(substr);
+		if(lend + start_idx > lens)
+			return 0;
+        
+		for(const SQChar* last = str + lens - lend - start_idx; last >= str; --last)
+		{
+			if(!strncmp(last, substr, lend))
+			{
+				sq_pushinteger(v, (SQInteger)(last - str));
+				return 1;
+			}
+		}
+		
+        return 0;
+    }
+    return sq_throwerror(v,_SC("invalid param"));
+}
+
+static SQInteger string_join(HSQUIRRELVM v)
+{
+	const SQChar *str;
+	SQObjectPtr op;
+	std::string ret;
+	
+	SQInteger idx;
+	SQObjectPtr refidx, key, val;
+	
+	if(sq_gettop(v) > 1 && SQ_SUCCEEDED(sq_getstring(v,1,&str)) && type(op = stack_get(v, 2)) == OT_ARRAY)
+	{
+		while((idx = _array(op)->Next(refidx, key, val)) != -1)
+		{
+			if(ret.empty())
+				ret = _obj_to_str(val, 0, 0, false);
+			else
+				ret += str + _obj_to_str(val, 0, 0, false);
+			
+			refidx = idx;
+		}
+		
+		sq_pushstring(v, ret.c_str(), ret.size());
+		return 1;
+	}
+	
+	return sq_throwerror(v,_SC("invalid param"));
+}
+
+#define STRING_ISFUNCZ(func)	static SQInteger string_##func(HSQUIRRELVM v)	\
+{\
+	const SQChar *str;\
+	sq_getstring(v,1,&str);\
+	int len = strlen(str);\
+	for(int i = 0; i < len; ++i) {\
+		if(!func(str[i])) {\
+			sq_pushbool(v, false);\
+			return 1;\
+		}\
+	}\
+	sq_pushbool(v, true);\
+	return 1;\
+}
+
+STRING_ISFUNCZ(isalnum)
+STRING_ISFUNCZ(isxdigit)
+STRING_ISFUNCZ(isalpha)
+STRING_ISFUNCZ(isascii)
+STRING_ISFUNCZ(isdigit)
+STRING_ISFUNCZ(isspace)
+STRING_ISFUNCZ(islower)
+STRING_ISFUNCZ(isupper)
+STRING_ISFUNCZ(isprint)
+STRING_ISFUNCZ(ispunct)
+
 #define STRING_TOFUNCZ(func) static SQInteger string_##func(HSQUIRRELVM v) \
 {\
     SQInteger sidx,eidx; \
@@ -861,9 +1276,27 @@ const SQRegFunction SQSharedState::_string_default_delegate_funcz[]={
     {_SC("tostring"),default_delegate_tostring,1, _SC(".")},
     {_SC("slice"),string_slice,-1, _SC("s n  n")},
     {_SC("find"),string_find,-2, _SC("s s n")},
+	{_SC("rfind"),string_rfind,-2, _SC("s s n")},
     {_SC("tolower"),string_tolower,-1, _SC("s n n")},
     {_SC("toupper"),string_toupper,-1, _SC("s n n")},
     {_SC("weakref"),obj_delegate_weakref,1, NULL },
+	{_SC("endswith"),string_endswith,-2, _SC("ss n n") },
+	{_SC("startswith"),string_startswith,-2, _SC("ss n n") },
+	{_SC("strip"),string_strip,-1, _SC("s s") },
+	{_SC("lstrip"),string_lstrip,-1, _SC("s s") },
+	{_SC("rstrip"),string_rstrip,-1, _SC("s s") },
+	{_SC("split"),string_split,2, _SC("ss") },
+	{_SC("join"),string_join,2, _SC("sa") },
+	{_SC("isalnum"),string_isalnum,1, _SC("s") },
+	{_SC("isxdigit"),string_isxdigit,1, _SC("s") },
+	{_SC("isalpha"),string_isalpha,1, _SC("s") },
+	{_SC("isascii"),string_isascii,1, _SC("s") },
+	{_SC("isdigit"),string_isdigit,1, _SC("s") },
+	{_SC("isspace"),string_isspace,1, _SC("s") },
+	{_SC("islower"),string_islower,1, _SC("s") },
+	{_SC("isupper"),string_isupper,1, _SC("s") },
+	{_SC("isprint"),string_isprint,1, _SC("s") },
+	{_SC("ispunct"),string_ispunct,1, _SC("s") },
     {NULL,(SQFUNCTION)0,0,NULL}
 };
 
