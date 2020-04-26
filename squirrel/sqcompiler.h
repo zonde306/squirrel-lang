@@ -1,4 +1,4 @@
-/*	see copyright notice in squirrel.h */
+﻿/*	see copyright notice in squirrel.h */
 #ifndef _SQCOMPILER_H_
 #define _SQCOMPILER_H_
 
@@ -70,7 +70,12 @@ struct SQVM;
 #define TK_STATIC 322
 #define TK_ENUM 323
 #define TK_CONST 324
-
+#define TK_ANDEQ 325
+#define TK_OREQ 326
+#define TK_SHIFTLEQ 327
+#define TK_SHIFTREQ 328
+#define TK_USHIFTREQ 329
+#define TK_XOREQ 330
 
 typedef void(*CompilerErrorFunc)(void *ud, const SQChar *s);
 bool Compile(SQVM *vm, SQLEXREADFUNC rg, SQUserPointer up, const SQChar *sourcename, SQObjectPtr &out, bool raiseerror, bool lineinfo);

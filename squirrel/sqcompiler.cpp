@@ -1,4 +1,4 @@
-/*
+﻿/*
 	see copyright notice in squirrel.h
 */
 #include "sqpcheader.h"
@@ -379,7 +379,14 @@ public:
 		case TK_PLUSEQ:
 		case TK_MULEQ:
 		case TK_DIVEQ:
-		case TK_MODEQ:{
+		case TK_MODEQ:
+		case TK_OREQ:
+		case TK_ANDEQ:
+		case TK_SHIFTLEQ:
+		case TK_SHIFTREQ:
+		case TK_USHIFTREQ:
+		case TK_XOREQ:
+		{
 			SQInteger op = _token;
 			SQInteger ds = _es.etype;
 			SQInteger pos = _es.epos;
@@ -419,6 +426,12 @@ public:
 			case TK_MULEQ:
 			case TK_DIVEQ:
 			case TK_MODEQ:
+			case TK_OREQ:
+			case TK_ANDEQ:
+			case TK_SHIFTLEQ:
+			case TK_SHIFTREQ:
+			case TK_USHIFTREQ:
+			case TK_XOREQ:
 				EmitCompoundArith(op, ds, pos);
 				break;
 			}
@@ -556,6 +569,8 @@ public:
 			case TK_MULEQ: case '*': return _OP_MUL;
 			case TK_DIVEQ: case '/': return _OP_DIV;
 			case TK_MODEQ: case '%': return _OP_MOD;
+			case TK_OREQ: case '|': return _OP_OR;
+			case TK_ANDEQ: case '&': return _OP_AND;
 			default: assert(0);
 		}
 		return _OP_ADD;
@@ -569,6 +584,12 @@ public:
 		case TK_MULEQ: oper = '*'; break;
 		case TK_DIVEQ: oper = '/'; break;
 		case TK_MODEQ: oper = '%'; break;
+		case TK_OREQ: oper = '|'; break;
+		case TK_ANDEQ: oper = '&'; break;
+		case TK_SHIFTLEQ: oper = '<'; break;
+		case TK_SHIFTREQ: oper = '>'; break;
+		case TK_USHIFTREQ: oper = '$'; break;
+		case TK_XOREQ: oper = '^'; break;
 		default: oper = 0; //shut up compiler
 			assert(0); break;
 		};
@@ -887,6 +908,7 @@ public:
 		switch(_token) {
 		case _SC('='): case _SC('('): case TK_NEWSLOT: case TK_MODEQ: case TK_MULEQ:
 	    case TK_DIVEQ: case TK_MINUSEQ: case TK_PLUSEQ: case TK_PLUSPLUS: case TK_MINUSMINUS:
+		case TK_OREQ: case TK_ANDEQ: case TK_SHIFTLEQ: case TK_SHIFTREQ: case TK_USHIFTREQ: case TK_XOREQ:
 			return false;
 		}
 		return (!_es.donot_get || ( _es.donot_get && (_token == _SC('.') || _token == _SC('['))));
