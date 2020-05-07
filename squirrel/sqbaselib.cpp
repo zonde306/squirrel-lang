@@ -584,6 +584,25 @@ static SQInteger table_values(HSQUIRRELVM v)
 	return 1;
 }
 
+static SQInteger table_update(HSQUIRRELVM v)
+{
+	SQTable* original = _table(stack_get(v, 1));
+	SQTable* replace = _table(stack_get(v, 2));
+	
+	SQInteger idx, numReplaced = 0;
+	SQObjectPtr refidx, key, val;
+	while((idx = replace->Next(false, refidx, key, val)) != -1)
+	{
+		if(!original->NewSlot(key, val))
+			numReplaced += 1;
+		
+		refidx = idx;
+	}
+	
+	sq_pushinteger(v, numReplaced);
+	return 1;
+}
+
 const SQRegFunction SQSharedState::_table_default_delegate_funcz[]={
     {_SC("len"),default_delegate_len,1, _SC("t")},
     {_SC("rawget"),container_rawget,2, _SC("t")},
@@ -595,8 +614,9 @@ const SQRegFunction SQSharedState::_table_default_delegate_funcz[]={
     {_SC("clear"),obj_clear,1, _SC(".")},
     {_SC("setdelegate"),table_setdelegate,2, _SC(".t|o")},
     {_SC("getdelegate"),table_getdelegate,1, _SC(".")},
-	{_SC("keys"),table_keys,1, _SC(".")},
-	{_SC("values"),table_values,1, _SC(".")},
+	{_SC("keys"),table_keys,1, _SC("t")},
+	{_SC("values"),table_values,1, _SC("t")},
+	{_SC("update"),table_update,2, _SC("tt")},
     {NULL,(SQFUNCTION)0,0,NULL}
 };
 
@@ -937,6 +957,23 @@ static SQInteger array_tostring(HSQUIRRELVM v)
 	return 1;
 }
 
+static SQInteger array_totable(HSQUIRRELVM v)
+{
+	SQArray* arr = _array(stack_get(v, 1));
+	SQTable* ret = SQTable::Create(_ss(v), arr->Size());
+	
+	SQInteger idx, i = 0;
+	SQObjectPtr refidx, key, val;
+	while((idx = arr->Next(refidx, key, val)) != -1)
+	{
+		ret->NewSlot(key, val);
+		refidx = idx;
+	}
+	
+	v->Push(ret);
+	return 1;
+}
+
 const SQRegFunction SQSharedState::_array_default_delegate_funcz[]={
     {_SC("len"),default_delegate_len,1, _SC("a")},
     {_SC("append"),array_append,2, _SC("a")},
@@ -944,6 +981,7 @@ const SQRegFunction SQSharedState::_array_default_delegate_funcz[]={
     {_SC("push"),array_append,2, _SC("a")},
     {_SC("pop"),array_pop,1, _SC("a")},
     {_SC("top"),array_top,1, _SC("a")},
+	{_SC("totable"),array_totable,1, _SC("a")},
     {_SC("insert"),array_insert,3, _SC("an")},
     {_SC("remove"),array_remove,2, _SC("an")},
     {_SC("resize"),array_resize,-2, _SC("an")},
@@ -1075,8 +1113,7 @@ static std::string _string_strip(const std::string& str, int striptype, const st
 	i = 0;
 	if (striptype != RIGHTSTRIP)
 	{
-		//memchr函数：从sep指向的内存区域的前charslen个字节查找str[i]
-		while (i < strlen&&memchr(sep, str[i], charslen))
+		while (i < strlen && memchr(sep, str[i], charslen))
 		{
 			i++;
 		}
@@ -1085,7 +1122,7 @@ static std::string _string_strip(const std::string& str, int striptype, const st
 	if (striptype != LEFTSTRIP)
 	{
 		j--;
-		while (j >= i&&memchr(sep, str[j], charslen))
+		while (j >= i && memchr(sep, str[j], charslen))
 		{
 			j--;
 		}
@@ -1174,7 +1211,7 @@ static SQInteger string_rfind(HSQUIRRELVM v)
     if(((top=sq_gettop(v))>1) && SQ_SUCCEEDED(sq_getstring(v,1,&str)) && SQ_SUCCEEDED(sq_getstring(v,2,&substr))){
         if(top>2)sq_getinteger(v,3,&start_idx);
 		
-		auto lens = strlen(str), lend = strlen(substr);
+		auto lens = scstrlen(str), lend = scstrlen(substr);
 		if(lend + start_idx > lens)
 			return 0;
         
@@ -1214,6 +1251,67 @@ static SQInteger string_join(HSQUIRRELVM v)
 		}
 		
 		sq_pushstring(v, ret.c_str(), ret.size());
+		return 1;
+	}
+	
+	return sq_throwerror(v,_SC("invalid param"));
+}
+
+static SQInteger _string_count(const SQChar* str, const SQChar* sub)
+{
+	SQInteger count = 0;
+	SQInteger klen = scstrlen(sub);
+	const SQChar *pos_start = str, *pos_end;
+	while(( pos_end = scstrstr(pos_start, sub) ))
+	{
+		pos_start = pos_end + klen;
+		++count;
+	}
+	
+	return count;
+}
+
+static SQInteger string_count(HSQUIRRELVM v)
+{
+	const SQChar *str, *sub;
+	if(SQ_SUCCEEDED(sq_getstring(v,1,&str)) && SQ_SUCCEEDED(sq_getstring(v,2,&sub)))
+	{
+		sq_pushinteger(v, _string_count(str, sub));
+		return 1;
+	}
+	
+	return sq_throwerror(v,_SC("invalid param"));
+}
+
+static SQInteger string_replace(HSQUIRRELVM v)
+{
+	const SQChar *str, *rep, *to;
+	if(SQ_SUCCEEDED(sq_getstring(v,1,&str)) && SQ_SUCCEEDED(sq_getstring(v,2,&rep)) && SQ_SUCCEEDED(sq_getstring(v,3,&to)))
+	{
+		SQInteger rep_len = scstrlen(rep);
+		SQInteger to_len  = scstrlen(to);
+		int counts = _string_count(str, rep);
+		SQUnsignedInteger m = scstrlen(str) + counts * (to_len - rep_len) + 1;
+		SQChar* new_buf = new SQChar[m];
+		memset(new_buf, '\0', m);
+		
+		const SQChar *pos_start = str, *pos_end;
+		SQChar *pbuf = new_buf;
+		int copy_len;
+		
+		while(( pos_end = scstrstr(pos_start, rep) ))
+		{
+			copy_len = pos_end - pos_start;
+			strncpy(pbuf, pos_start, copy_len);
+			pbuf += copy_len;
+			strcpy(pbuf, to);
+			pbuf += to_len;
+			pos_start  = pos_end + rep_len;
+		}
+		
+		strcpy(pbuf, pos_start);
+		v->Push(SQString::Create(_ss(v), new_buf));
+		delete[] new_buf;
 		return 1;
 	}
 	
@@ -1286,6 +1384,8 @@ const SQRegFunction SQSharedState::_string_default_delegate_funcz[]={
 	{_SC("lstrip"),string_lstrip,-1, _SC("s s") },
 	{_SC("rstrip"),string_rstrip,-1, _SC("s s") },
 	{_SC("split"),string_split,2, _SC("ss") },
+	{_SC("count"),string_count,2, _SC("ss") },
+	{_SC("replace"),string_replace,3, _SC("sss") },
 	{_SC("join"),string_join,2, _SC("sa") },
 	{_SC("isalnum"),string_isalnum,1, _SC("s") },
 	{_SC("isxdigit"),string_isxdigit,1, _SC("s") },
