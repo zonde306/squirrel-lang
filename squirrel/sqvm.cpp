@@ -1,4 +1,4 @@
-/*
+﻿/*
     see copyright notice in squirrel.h
 */
 #include "sqpcheader.h"
@@ -665,6 +665,7 @@ bool SQVM::IsFalse(SQObjectPtr &o)
 	case OT_ARRAY:		return _array(o)->Size() == 0;
 	default:;
 	}
+	
     if(((type(o) & SQOBJECT_CANBEFALSE)
         && ( ((type(o) == OT_FLOAT) && (_float(o) == SQFloat(0.0))) ))
 #if !defined(SQUSEDOUBLE) || (defined(SQUSEDOUBLE) && defined(_SQ64))
@@ -675,7 +676,8 @@ bool SQVM::IsFalse(SQObjectPtr &o)
     {
         return true;
     }
-    return false;
+	
+    return type(o) == OT_NULL;
 }
 extern SQInstructionDesc g_InstrDesc[];
 bool SQVM::Execute(SQObjectPtr &closure, SQInteger nargs, SQInteger stackbase,SQObjectPtr &outres, SQBool raiseerror,ExecutionType et)

@@ -1290,7 +1290,7 @@ static SQInteger string_replace(HSQUIRRELVM v)
 	{
 		SQInteger rep_len = scstrlen(rep);
 		SQInteger to_len  = scstrlen(to);
-		int counts = _string_count(str, rep);
+		SQInteger counts = _string_count(str, rep);
 		SQUnsignedInteger m = scstrlen(str) + counts * (to_len - rep_len) + 1;
 		SQChar* new_buf = new SQChar[m];
 		memset(new_buf, '\0', m);
